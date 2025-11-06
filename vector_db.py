@@ -53,19 +53,40 @@ class QdrantStorage:
         contexts = []
         sources = set()
         guide_ids = set()
+        images_per_context = []
+        guide_info = []
 
         for r in results:
             payload = getattr(r, "payload", None) or {}
             text = payload.get("text", "")
             source = payload.get("source", "")
             guide_id = payload.get("guide_id")
+            images = payload.get("images") or []
             if text:
                 contexts.append(text)
                 sources.add(source)
                 if guide_id:
                     guide_ids.add(guide_id)
+                # collect per-result guide meta
+                guide_info.append({
+                    "guide_id": guide_id,
+                    "title": payload.get("guide_title"),
+                    "url": payload.get("guide_url"),
+                    "source": source,
+                })
+                # ensure list[str]
+                if isinstance(images, list):
+                    images_per_context.append([str(u) for u in images if u])
+                else:
+                    images_per_context.append([])
 
-        return {"contexts": contexts, "sources": list(sources), "guide_ids": list(guide_ids)}
+        return {
+            "contexts": contexts,
+            "sources": list(sources),
+            "guide_ids": list(guide_ids),
+            "images_per_context": images_per_context,
+            "guide_info": guide_info,
+        }
 
     def list_guides(self) -> list[dict]:
         guides: dict[int, dict] = {}

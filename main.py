@@ -1,5 +1,5 @@
 import logging
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 import inngest
 import inngest.fast_api
@@ -9,9 +9,11 @@ import os
 import datetime
 import boto3
 import json
+import urllib.parse
+import re
 from typing import Literal, Optional
 from pydantic import BaseModel, Field
-from data_loader import load_and_chunk_guide, embed_texts, fetch_guide_list, fetch_guide
+from data_loader import load_and_chunk_guide, load_and_chunk_guide_with_media, embed_texts, fetch_guide_list, fetch_guide
 from vector_db import QdrantStorage
 from custom_types import RAQQueryResult, RAGSearchResult, RAGUpsertResult, RAGChunkAndSrc
 
@@ -30,6 +32,33 @@ inngest_client = inngest.Inngest(
 )
 
 logger = logging.getLogger("rag_app")
+_GUID_PATH_RE = re.compile(r"/igi/[^/]+/([^./?]+)\.")
+
+
+def _dedupe_images_by_guid(urls: list[str], max_items: int = 12) -> list[str]:
+    """Dedupe images by GUID (e.g., /igi/<site>/<GUID>.<size>), ignoring size and query.
+    Falls back to base URL (no query/fragment) if GUID not parseable.
+    Keeps original order and returns at most max_items.
+    """
+    seen: set[str] = set()
+    result: list[str] = []
+    for url in urls or []:
+        if not url:
+            continue
+        key = None
+        m = _GUID_PATH_RE.search(url)
+        if m:
+            key = f"guid:{m.group(1)}"
+        else:
+            parsed = urllib.parse.urlsplit(url)
+            key = urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, parsed.path, "", ""))
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(url)
+        if len(result) >= max_items:
+            break
+    return result
 
 
 class ChatMessage(BaseModel):
@@ -62,6 +91,8 @@ def _retrieve_context(
         contexts=found["contexts"],
         sources=found["sources"],
         guide_ids=found.get("guide_ids", []),
+        images_per_context=found.get("images_per_context", []),
+        guide_info=found.get("guide_info", []),
     )
 
 
@@ -155,8 +186,14 @@ async def rag_ingest_guide(ctx: inngest.Context):
         guide_id = ctx.event.data["guide_id"]
         token = ctx.event.data["token"]
         source_id = ctx.event.data.get("source_id", f"guide_{guide_id}")
-        chunks = load_and_chunk_guide(guide_id, token)
-        return RAGChunkAndSrc(chunks=chunks, source_id=source_id)
+        chunks, images, meta = load_and_chunk_guide_with_media(guide_id, token)
+        return RAGChunkAndSrc(
+            chunks=chunks,
+            images=images,
+            source_id=source_id,
+            guide_title=meta.get("guide_title"),
+            guide_url=meta.get("guide_url"),
+        )
 
     def _upsert(chunks_and_src: RAGChunkAndSrc, guide_id: int) -> RAGUpsertResult:
         chunks = chunks_and_src.chunks
@@ -164,8 +201,19 @@ async def rag_ingest_guide(ctx: inngest.Context):
         vecs = embed_texts(chunks)
         ids = [str(uuid.uuid5(uuid.NAMESPACE_URL,
                    f"{source_id}:{i}")) for i in range(len(chunks))]
-        payloads = [{"source": source_id, "text": chunks[i], "guide_id": guide_id}
-                    for i in range(len(chunks))]
+        # Attach images per chunk (if available)
+        images = getattr(chunks_and_src, "images", []) or []
+        payloads = [
+            {
+                "source": source_id,
+                "text": chunks[i],
+                "guide_id": guide_id,
+                **({"guide_title": chunks_and_src.guide_title} if getattr(chunks_and_src, "guide_title", None) else {}),
+                **({"guide_url": chunks_and_src.guide_url} if getattr(chunks_and_src, "guide_url", None) else {}),
+                **({"images": images[i]} if i < len(images) and images[i] else {}),
+            }
+            for i in range(len(chunks))
+        ]
         with QdrantStorage() as storage:
             storage.upsert(ids, vecs, payloads)
         return RAGUpsertResult(ingested=len(chunks))
@@ -356,7 +404,7 @@ async def rag_ingest_site(ctx: inngest.Context):
 def process_single_guide(guide_id: int, token: str, site_id: str) -> dict:
     """Process a single guide and return chunk count."""
     try:
-        chunks = load_and_chunk_guide(guide_id, token)
+        chunks, images, meta = load_and_chunk_guide_with_media(guide_id, token)
         if not chunks:
             return {"chunks": 0}
 
@@ -364,8 +412,17 @@ def process_single_guide(guide_id: int, token: str, site_id: str) -> dict:
         source_id = f"{site_id}_guide_{guide_id}"
         ids = [str(uuid.uuid5(uuid.NAMESPACE_URL,
                    f"{source_id}:{i}")) for i in range(len(chunks))]
-        payloads = [{"source": source_id, "text": chunks[i],
-                     "guide_id": guide_id} for i in range(len(chunks))]
+        payloads = [
+            {
+                "source": source_id,
+                "text": chunks[i],
+                "guide_id": guide_id,
+                **({"guide_title": meta.get("guide_title")} if meta.get("guide_title") else {}),
+                **({"guide_url": meta.get("guide_url")} if meta.get("guide_url") else {}),
+                **({"images": images[i]} if i < len(images) and images[i] else {}),
+            }
+            for i in range(len(chunks))
+        ]
 
         with QdrantStorage() as storage:
             storage.upsert(ids, vecs, payloads)
@@ -395,6 +452,17 @@ async def rag_query_guide_ai(ctx: inngest.Context):
             "fetch-guide-urls", lambda: _collect_source_guides(
                 found.guide_ids, token)
         )
+    # Fallback: build from payload metadata if none fetched
+    if not source_guides and found.guide_info:
+        seen = set()
+        for info in found.guide_info:
+            gid = info.get("guide_id")
+            if not gid or gid in seen:
+                continue
+            seen.add(gid)
+            title = info.get("title") or f"Guide {gid}"
+            url = info.get("url") or ""
+            source_guides.append({"guide_id": gid, "title": title, "url": url})
 
     answer = await ctx.step.run(
         "llm-answer",
@@ -406,6 +474,8 @@ async def rag_query_guide_ai(ctx: inngest.Context):
         "sources": found.sources,
         "num_contexts": len(found.contexts),
         "source_guides": source_guides,
+        # Aggregate images from retrieved contexts (dedupe by GUID, keep order)
+        "images": _dedupe_images_by_guid([u for imgs in (found.images_per_context or []) for u in imgs], 12),
     }
 
 
@@ -453,7 +523,7 @@ def health_check() -> dict:
 
 
 @app.post("/api/chat", response_model=RAQQueryResult)
-def chat_endpoint(request: ChatRequest) -> RAQQueryResult:
+def chat_endpoint(request: ChatRequest, response: Response) -> RAQQueryResult:
     latest_user_message = next(
         (msg for msg in reversed(request.messages) if msg.role == "user"),
         None,
@@ -507,11 +577,29 @@ def chat_endpoint(request: ChatRequest) -> RAQQueryResult:
 
     source_guides = _collect_source_guides(
         search_result.guide_ids, request.token)
+    # Fallback build from payload metadata
+    if not source_guides and getattr(search_result, "guide_info", None):
+        seen = set()
+        for info in search_result.guide_info:
+            gid = info.get("guide_id")
+            if not gid or gid in seen:
+                continue
+            seen.add(gid)
+            title = info.get("title") or f"Guide {gid}"
+            url = info.get("url") or ""
+            source_guides.append({"guide_id": gid, "title": title, "url": url})
+    # Disable caching of chat responses
+    # TODO: Disable it when not in development
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+
     return RAQQueryResult(
         answer=answer,
         sources=search_result.sources,
         num_contexts=len(search_result.contexts),
         source_guides=source_guides,
+        images=_dedupe_images_by_guid([u for imgs in (search_result.images_per_context or []) for u in imgs], 12),
     )
 
 

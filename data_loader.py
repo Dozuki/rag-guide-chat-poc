@@ -3,7 +3,7 @@ import json
 from llama_index.core.node_parser import SentenceSplitter
 from dotenv import load_dotenv
 import requests
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple, TypedDict
 
 load_dotenv()
 
@@ -116,6 +116,57 @@ def extract_guide_text(guide_data: Dict) -> List[str]:
     return text_chunks
 
 
+def extract_guide_images(guide_data: Dict) -> List[List[str]]:
+    """Extract image URLs aligned with the text sections from extract_guide_text.
+
+    The order mirrors extract_guide_text:
+    1) Header (no images)
+    2) Optional introduction (no images)
+    3) Steps (images from step.media)
+    4) Optional conclusion (no images)
+    5) Optional parts (no images)
+    6) Optional tools (no images)
+    """
+    sections_images: List[List[str]] = []
+
+    # Header
+    sections_images.append([])
+
+    # Introduction (if present)
+    intro = guide_data.get("introduction_rendered", "").strip()
+    if intro:
+        sections_images.append([])
+
+    # Steps media
+    steps = guide_data.get("steps", [])
+    for step in steps:
+        step_images: List[str] = []
+        media = step.get("media") or {}
+        if isinstance(media, dict) and media.get("type") == "image":
+            for item in (media.get("data") or []):
+                if isinstance(item, dict):
+                    # Prefer stable-size links over signed "original" URLs
+                    url = item.get("original")
+                    if url:
+                        step_images.append(url)
+        sections_images.append(step_images)
+
+    # Conclusion (if present)
+    conclusion = guide_data.get("conclusion_rendered", "").strip()
+    if conclusion:
+        sections_images.append([])
+
+    # Parts (if present)
+    if guide_data.get("parts", []):
+        sections_images.append([])
+
+    # Tools (if present)
+    if guide_data.get("tools", []):
+        sections_images.append([])
+
+    return sections_images
+
+
 def fetch_guide_list(token: str, offset: int = 0, limit: int = 200) -> List[Dict]:
     """Fetch a page of guide summaries from the Dozuki site."""
     url = f"{DOZUKI_BASE_URL}/api/2.0/guides"
@@ -152,6 +203,50 @@ def load_and_chunk_guide(guide_id: int, token: str) -> List[str]:
             chunks.append(section)
 
     return chunks
+
+
+class GuideMeta(TypedDict, total=False):
+    guide_title: str
+    guide_url: str
+
+
+def load_and_chunk_guide_with_media(guide_id: int, token: str) -> Tuple[List[str], List[List[str]], GuideMeta]:
+    """Load a guide and produce (chunks, images_per_chunk).
+
+    For sections that exceed the chunk size, the same set of section images
+    is associated with each resulting sub-chunk.
+    """
+    guide_data = fetch_guide(guide_id, token)
+    text_sections = extract_guide_text(guide_data)
+    image_sections = extract_guide_images(guide_data)
+    meta: GuideMeta = {}
+    if isinstance(guide_data, dict):
+        if guide_data.get("title"):
+            meta["guide_title"] = str(guide_data.get("title"))
+        if guide_data.get("url"):
+            meta["guide_url"] = str(guide_data.get("url"))
+
+    # Safety: align lengths if they differ for any reason
+    max_len = min(len(text_sections), len(image_sections))
+    text_sections = text_sections[:max_len]
+    image_sections = image_sections[:max_len]
+
+    chunks: List[str] = []
+    chunk_images: List[List[str]] = []
+
+    for idx, section in enumerate(text_sections):
+        images = image_sections[idx] if idx < len(image_sections) else []
+        if len(section) > 1000:
+            parts = splitter.split_text(section)
+            for part in parts:
+                chunks.append(part)
+                # Reuse the same images for each split part of the same section
+                chunk_images.append(list(images) if images else [])
+        else:
+            chunks.append(section)
+            chunk_images.append(list(images) if images else [])
+
+    return chunks, chunk_images, meta
 
 
 def embed_texts(texts: List[str]) -> List[List[float]]:
