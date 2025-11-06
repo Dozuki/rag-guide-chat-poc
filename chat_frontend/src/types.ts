@@ -18,6 +18,7 @@ export interface ChatMessage {
   sourceGuides?: SourceGuide[];
   numContexts?: number;
   error?: string;
+  images?: string[];
 }
 
 export type ChatScope = "site" | "guide";
@@ -34,6 +35,7 @@ export interface ChatResponsePayload {
   sources: string[];
   num_contexts: number;
   source_guides: SourceGuide[];
+  images?: string[];
 }
 
 export interface GuideSummary {

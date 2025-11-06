@@ -13,7 +13,8 @@ const GUIDE_SOURCE_REGEX = /^([a-z0-9_-]+)_guide_(\d+)$/i;
 const buildGuideHref = (
   url?: string,
   siteSlug?: string,
-  guideId?: number | string
+  guideId?: number | string,
+  title?: string
 ): string | undefined => {
   if (url && /^https?:\/\//i.test(url)) {
     return url;
@@ -35,10 +36,18 @@ const buildGuideHref = (
   }
 
   if (normalizedId && siteBase) {
+    if (title) {
+      const slug = encodeURIComponent(title).replace(/%20/g, "+");
+      return `${siteBase}/Guide/${slug}/${normalizedId}`;
+    }
     return `${siteBase}/Guide/${normalizedId}`;
   }
 
   if (normalizedId && siteSlug) {
+    if (title) {
+      const slug = encodeURIComponent(title).replace(/%20/g, "+");
+      return `https://${siteSlug}.dozuki.com/Guide/${slug}/${normalizedId}`;
+    }
     return `https://${siteSlug}.dozuki.com/Guide/${normalizedId}`;
   }
 
@@ -152,7 +161,7 @@ const SourceList = ({ sources = [], guides = [], numContexts }: SourceListProps)
             const sourceMeta = Number.isNaN(guideId)
               ? undefined
               : parsedSourceMeta.get(guideId);
-            const href = buildGuideHref(guide.url, sourceMeta?.site, guideId);
+            const href = buildGuideHref(guide.url, sourceMeta?.site, guideId, guide.title);
             const displayUrl = guide.url || href;
 
             if (!href) {

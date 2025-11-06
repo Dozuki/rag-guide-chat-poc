@@ -1,7 +1,8 @@
 import clsx from "clsx";
 import SourceList from "./SourceList";
-import MarkdownRenderer from "./MarkdownRenderer";
+import ImageGallery from "./ImageGallery";
 import type { ChatMessage } from "../types";
+import MarkdownRenderer from "./MarkdownRenderer";
 
 interface ChatMessageBubbleProps {
   message: ChatMessage;
@@ -47,10 +48,13 @@ const ChatMessageBubble = ({ message }: ChatMessageBubbleProps) => {
           {message.status === "error" && message.error ? (
             <span className="message__error">{message.error}</span>
           ) : null}
+          {isAssistant && message.status === "ready" && message.images && message.images.length > 0 ? (
+            <ImageGallery images={message.images} max={12} />
+          ) : null}
         </div>
         {isAssistant && message.status === "ready" ? (
           <SourceList
-            sources={message.sources}
+            // sources={message.sources}
             guides={message.sourceGuides}
             numContexts={message.numContexts}
           />

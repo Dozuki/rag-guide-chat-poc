@@ -155,7 +155,9 @@ export const useChat = () => {
       setError(null);
 
       try {
-        const response = await fetch(resolveApiUrl("/api/chat"), {
+        const response = await fetch(
+          resolveApiUrl(`/api/chat?t=${Date.now()}`),
+          {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -169,8 +171,10 @@ export const useChat = () => {
               : {}),
             ...(settings.token ? { token: settings.token } : {}),
           }),
-          signal: controller.signal,
-        });
+            cache: "no-store",
+            signal: controller.signal,
+          }
+        );
 
         if (!response.ok) {
           const message = await response.text();
@@ -189,6 +193,7 @@ export const useChat = () => {
                   sources: data.sources ?? [],
                   sourceGuides: data.source_guides ?? [],
                   numContexts: data.num_contexts ?? 0,
+                  images: data.images ?? [],
                 }
               : msg
           )
