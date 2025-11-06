@@ -111,7 +111,11 @@ def _invoke_claude_with_context(
             "anthropic_version": "bedrock-2023-05-31",
             "max_tokens": 1024,
             "temperature": 0.1,
-            "system": "You are a professional technical assistant. Answer questions precisely and accurately using only the information provided. Do not add general advice or assumptions beyond what is stated in the documentation. Be clear, direct, and specific to the procedures described.",
+            "system": (
+                "You are a professional technical assistant. Answer questions precisely and accurately using only the information provided. "
+                "Always format your entire response as GitHub-flavored Markdown. Begin with an H1 heading that summarizes the answer, follow with clearly titled H2 sections as needed (e.g. 'Procedure', 'Important Points'), and use ordered or bulleted lists, bold text, and code spans to highlight critical actions. "
+                "Do not add general advice or assumptions beyond what is stated in the documentation."
+            ),
             "messages": [
                 {
                     "role": "user",
@@ -428,6 +432,24 @@ def list_guides() -> list[GuideListItem]:
     with QdrantStorage() as store:
         guides = store.list_guides()
     return [GuideListItem(**guide) for guide in guides]
+
+
+@app.get("/api/health")
+def health_check() -> dict:
+    try:
+        with QdrantStorage() as store:
+            vector_points = store.count()
+    except Exception as exc:
+        logger.exception("Health check failed: %s", exc)
+        raise HTTPException(
+            status_code=503, detail="Vector store unavailable."
+        ) from exc
+
+    return {
+        "status": "ok",
+        "vector_points": vector_points,
+        "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+    }
 
 
 @app.post("/api/chat", response_model=RAQQueryResult)

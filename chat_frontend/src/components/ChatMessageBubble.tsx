@@ -1,23 +1,11 @@
 import clsx from "clsx";
 import SourceList from "./SourceList";
+import MarkdownRenderer from "./MarkdownRenderer";
 import type { ChatMessage } from "../types";
 
 interface ChatMessageBubbleProps {
   message: ChatMessage;
 }
-
-const MessageContent = ({ content }: { content: string }) => {
-  const segments = content.split("\n");
-  return (
-    <>
-      {segments.map((segment, index) => (
-        <p key={index} className="message__text">
-          {segment}
-        </p>
-      ))}
-    </>
-  );
-};
 
 const ChatMessageBubble = ({ message }: ChatMessageBubbleProps) => {
   const isUser = message.role === "user";
@@ -28,7 +16,7 @@ const ChatMessageBubble = ({ message }: ChatMessageBubbleProps) => {
     return (
       <div className="message message--system">
         <div className="message__system-bubble">
-          <MessageContent content={message.content} />
+          <MarkdownRenderer content={message.content} />
         </div>
       </div>
     );
@@ -54,7 +42,7 @@ const ChatMessageBubble = ({ message }: ChatMessageBubbleProps) => {
               <span className="message__dot" />
             </span>
           ) : (
-            <MessageContent content={message.content} />
+            <MarkdownRenderer content={message.content} />
           )}
           {message.status === "error" && message.error ? (
             <span className="message__error">{message.error}</span>

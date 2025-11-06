@@ -40,7 +40,11 @@ const ChatScopeSelector = ({
   };
 
   return (
-    <section className="scope-selector" aria-label="Chat scope">
+    <section
+      className="scope-selector"
+      aria-label="Chat scope"
+      data-testid="scope-selector"
+    >
       <div className="scope-selector__controls">
         <button
           type="button"
@@ -48,6 +52,7 @@ const ChatScopeSelector = ({
             "scope-selector__button--active": scope === "site",
           })}
           onClick={() => onScopeChange("site")}
+          data-testid="scope-option-site"
         >
           Entire Site
         </button>
@@ -57,6 +62,7 @@ const ChatScopeSelector = ({
             "scope-selector__button--active": scope === "guide",
           })}
           onClick={() => onScopeChange("guide")}
+          data-testid="scope-option-guide"
         >
           Single Guide
         </button>
@@ -65,15 +71,21 @@ const ChatScopeSelector = ({
       {scope === "guide" ? (
         <div className="scope-selector__details">
           {isLoading ? (
-            <span className="scope-selector__status">Loading guides…</span>
+            <span className="scope-selector__status" data-testid="scope-status">
+              Loading guides…
+            </span>
           ) : null}
           {error ? (
-            <div className="scope-selector__status scope-selector__status--error">
+            <div
+              className="scope-selector__status scope-selector__status--error"
+              data-testid="scope-status-error"
+            >
               <span>{error}</span>
               <button
                 type="button"
                 className="scope-selector__status-button"
                 onClick={onReload}
+                data-testid="scope-refresh"
               >
                 Try again
               </button>
@@ -86,6 +98,7 @@ const ChatScopeSelector = ({
                 <select
                   value={guideId ?? ""}
                   onChange={(event) => handleGuideSelect(event.target.value)}
+                  data-testid="scope-guide-select"
                 >
                   {guides.map((guide) => (
                     <option key={guide.guide_id} value={guide.guide_id}>
@@ -103,6 +116,7 @@ const ChatScopeSelector = ({
                   type="button"
                   className="scope-selector__status-button"
                   onClick={onReload}
+                  data-testid="scope-refresh"
                 >
                   Refresh list
                 </button>

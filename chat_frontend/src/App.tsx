@@ -3,8 +3,10 @@ import ChatMessageBubble from "./components/ChatMessageBubble";
 import MessageComposer from "./components/MessageComposer";
 import SettingsPanel from "./components/SettingsPanel";
 import ChatScopeSelector from "./components/ChatScopeSelector";
+import ServerStatusBadge from "./components/ServerStatusBadge";
 import { useChat } from "./hooks/useChat";
 import { useGuides } from "./hooks/useGuides";
+import { useServerStatus } from "./hooks/useServerStatus";
 
 const App = () => {
   const {
@@ -23,10 +25,19 @@ const App = () => {
     error: guidesError,
     refresh,
   } = useGuides();
+  const {
+    status: serverStatus,
+    health: serverHealth,
+    isChecking: isCheckingServer,
+    error: serverError,
+    lastChecked,
+    checkStatus,
+  } = useServerStatus();
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const isGuideSelectionRequired =
     settings.scope === "guide" && settings.guideId == null;
+  const isServerOffline = serverStatus === "offline";
 
   useEffect(() => {
     if (settings.scope !== "guide") {
@@ -67,16 +78,26 @@ const App = () => {
               grounded references so you can verify every answer.
             </p>
           </div>
-          <ChatScopeSelector
-            scope={settings.scope}
-            guideId={settings.guideId}
-            guides={guides}
-            isLoading={isLoadingGuides}
-            error={guidesError}
-            onScopeChange={(scope) => updateSettings({ scope })}
-            onGuideChange={(guideId) => updateSettings({ guideId })}
-            onReload={refresh}
-          />
+          <div className="app__meta">
+            <ChatScopeSelector
+              scope={settings.scope}
+              guideId={settings.guideId}
+              guides={guides}
+              isLoading={isLoadingGuides}
+              error={guidesError}
+              onScopeChange={(scope) => updateSettings({ scope })}
+              onGuideChange={(guideId) => updateSettings({ guideId })}
+              onReload={refresh}
+            />
+            <ServerStatusBadge
+              status={serverStatus}
+              health={serverHealth}
+              isChecking={isCheckingServer}
+              error={serverError}
+              lastChecked={lastChecked}
+              onRetry={checkStatus}
+            />
+          </div>
           <div className="app__actions">
             <button
               type="button"
@@ -101,6 +122,16 @@ const App = () => {
             <strong>Heads up:</strong> {error}
           </div>
         ) : null}
+        {isServerOffline ? (
+          <div
+            className="app__alert app__alert--error"
+            role="status"
+            data-testid="server-offline-alert"
+          >
+            <strong>Server offline:</strong> Check connectivity or restart the
+            API, then refresh the status badge.
+          </div>
+        ) : null}
         {isGuideSelectionRequired ? (
           <div className="app__alert app__alert--info" role="status">
             <strong>Pick a guide:</strong> Select an ingested guide from the
@@ -116,7 +147,7 @@ const App = () => {
           <MessageComposer
             onSend={sendMessage}
             onCancel={cancelRequest}
-            disabled={isSending || isGuideSelectionRequired}
+            disabled={isSending || isGuideSelectionRequired || isServerOffline}
             isSending={isSending}
           />
           <span className="app__footnote">

@@ -40,3 +40,9 @@ export interface GuideSummary {
   guide_id: number;
   source?: string | null;
 }
+
+export interface ServerHealth {
+  status: "ok";
+  vector_points: number;
+  timestamp: string;
+}

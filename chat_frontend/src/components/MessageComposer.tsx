@@ -47,7 +47,11 @@ const MessageComposer = ({
   };
 
   return (
-    <form className="composer" onSubmit={handleSubmit}>
+    <form
+      className="composer"
+      onSubmit={handleSubmit}
+      data-testid="message-composer"
+    >
       <textarea
         ref={textareaRef}
         className="composer__input"
@@ -59,6 +63,7 @@ const MessageComposer = ({
         disabled={disabled}
         onChange={(event) => setValue(event.target.value)}
         onKeyDown={handleKeyDown}
+        data-testid="message-input"
       />
       <div className="composer__actions">
         {isSending ? (
@@ -66,6 +71,7 @@ const MessageComposer = ({
             type="button"
             className="composer__button composer__button--cancel"
             onClick={onCancel}
+            data-testid="cancel-button"
           >
             Cancel
           </button>
@@ -74,6 +80,7 @@ const MessageComposer = ({
           type="submit"
           className="composer__button composer__button--primary"
           disabled={disabled || !value.trim()}
+          data-testid="send-button"
         >
           {isSending ? "Sending..." : "Send"}
         </button>

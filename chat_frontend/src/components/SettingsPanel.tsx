@@ -30,7 +30,11 @@ const SettingsPanel = ({ settings, onClose, onSubmit }: SettingsPanelProps) => {
   return (
     <div className="settings">
       <div className="settings__backdrop" onClick={onClose} />
-      <form className="settings__panel" onSubmit={handleSubmit}>
+      <form
+        className="settings__panel"
+        onSubmit={handleSubmit}
+        data-testid="settings-panel"
+      >
         <header className="settings__header">
           <h2>Chat Settings</h2>
           <button type="button" className="settings__close" onClick={onClose}>
@@ -73,12 +77,14 @@ const SettingsPanel = ({ settings, onClose, onSubmit }: SettingsPanelProps) => {
             type="button"
             className="settings__button settings__button--ghost"
             onClick={onClose}
+            data-testid="settings-cancel"
           >
             Cancel
           </button>
           <button
             type="submit"
             className="settings__button settings__button--primary"
+            data-testid="settings-save"
           >
             Save
           </button>
