@@ -34,6 +34,7 @@ const App = () => {
     checkStatus,
   } = useServerStatus();
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const isGuideSelectionRequired =
     settings.scope === "guide" && settings.guideId == null;
@@ -70,52 +71,83 @@ const App = () => {
   return (
     <div className="app-shell">
       <div className="app">
-        <header className="app__header">
-          <div className="app__title">
-            <h1>RAG Knowledge Chat</h1>
-            <p>
-              Converse with the ingested Dozuki documentation. Responses include
-              grounded references so you can verify every answer.
-            </p>
-          </div>
-          <div className="app__meta">
-            <ChatScopeSelector
-              scope={settings.scope}
-              guideId={settings.guideId}
-              guides={guides}
-              isLoading={isLoadingGuides}
-              error={guidesError}
-              onScopeChange={(scope) => updateSettings({ scope })}
-              onGuideChange={(guideId) => updateSettings({ guideId })}
-              onReload={refresh}
-            />
-            <ServerStatusBadge
-              status={serverStatus}
-              health={serverHealth}
-              isChecking={isCheckingServer}
-              error={serverError}
-              lastChecked={lastChecked}
-              onRetry={checkStatus}
-            />
-          </div>
-          <div className="app__actions">
+        <header className={`app__header ${isHeaderCollapsed ? 'app__header--collapsed' : ''}`}>
+          <div className="app__header-top">
+            <div className="app__title">
+              <h1>RAG Knowledge Chat</h1>
+              {!isHeaderCollapsed && (
+                <p>
+                  Converse with the ingested Dozuki documentation. Responses include
+                  grounded references so you can verify every answer.
+                </p>
+              )}
+            </div>
             <button
               type="button"
-              className="app__button"
-              onClick={resetConversation}
-              disabled={isSending}
+              className="app__header-toggle"
+              onClick={() => setIsHeaderCollapsed(!isHeaderCollapsed)}
+              aria-label={isHeaderCollapsed ? "Expand header" : "Collapse header"}
             >
-              New Conversation
-            </button>
-            <button
-              type="button"
-              className="app__button app__button--secondary"
-              onClick={() => setIsSettingsOpen(true)}
-              disabled={isSettingsOpen}
-            >
-              Settings
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 20 20"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+                style={{ transform: isHeaderCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)', transition: 'transform 0.2s ease' }}
+              >
+                <path
+                  d="M5 7.5L10 12.5L15 7.5"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
             </button>
           </div>
+          {!isHeaderCollapsed && (
+            <div className="app__header-content">
+              <div className="app__meta">
+                <ChatScopeSelector
+                  scope={settings.scope}
+                  guideId={settings.guideId}
+                  guides={guides}
+                  isLoading={isLoadingGuides}
+                  error={guidesError}
+                  onScopeChange={(scope) => updateSettings({ scope })}
+                  onGuideChange={(guideId) => updateSettings({ guideId })}
+                  onReload={refresh}
+                />
+                <ServerStatusBadge
+                  status={serverStatus}
+                  health={serverHealth}
+                  isChecking={isCheckingServer}
+                  error={serverError}
+                  lastChecked={lastChecked}
+                  onRetry={checkStatus}
+                />
+              </div>
+              <div className="app__actions">
+                <button
+                  type="button"
+                  className="app__button"
+                  onClick={resetConversation}
+                  disabled={isSending}
+                >
+                  New Conversation
+                </button>
+                <button
+                  type="button"
+                  className="app__button app__button--secondary"
+                  onClick={() => setIsSettingsOpen(true)}
+                  disabled={isSettingsOpen}
+                >
+                  Settings
+                </button>
+              </div>
+            </div>
+          )}
         </header>
         {error ? (
           <div className="app__alert" role="status">

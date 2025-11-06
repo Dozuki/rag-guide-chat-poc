@@ -1,7 +1,5 @@
 import asyncio
-from pathlib import Path
 import time
-import threading
 
 import streamlit as st
 import inngest
@@ -236,7 +234,7 @@ if not st.session_state.dozuki_token:
 
 # Main content area with tabs
 tab1, tab2, tab3 = st.tabs(
-    ["📄 Single Guide", "🌐 Entire Site", "❓ Ask Questions"])
+    ["📄 Single Guide", "🌐 Entire Site", "🔧 Development"])
 
 # Single Guide Ingestion Tab
 with tab1:
@@ -457,53 +455,144 @@ with tab2:
                 if "site_progress" in st.session_state:
                     del st.session_state.site_progress
 
-# Query Tab
+# Development Tab
 with tab3:
-    st.header("Ask Questions About Your Guides")
+    st.header("🔧 Development Info")
+    st.caption("Useful information for debugging and development")
 
-    doc_count = get_document_count()
-    if doc_count == 0:
-        st.warning(
-            "⚠️ You must ingest at least one guide before asking questions.")
-        st.info(
-            f"Vector database currently contains {doc_count} documents. Please ingest guides using the tabs above.")
-        st.stop()
-    else:
-        st.info(
-            f"✅ Vector database contains {doc_count} documents ready for querying.")
+    dev_tab1, dev_tab2, dev_tab3, dev_tab4 = st.tabs(
+        ["🔑 Authentication", "⚙️ Configuration", "💾 Session State", "📊 System Info"])
 
-    with st.form("rag_query_form"):
-        question = st.text_input("Your question")
-        top_k = st.number_input("Number of relevant chunks to retrieve",
-                                min_value=1, max_value=20, value=5, step=1)
-        submitted = st.form_submit_button("Ask")
+    with dev_tab1:
+        st.subheader("Authentication Details")
 
-        if submitted and question.strip():
-            with st.spinner("Generating answer..."):
+        if st.session_state.dozuki_token:
+            st.success("✅ Authenticated")
+
+            with st.expander("🔑 Current Token", expanded=False):
+                st.code(st.session_state.dozuki_token, language="text")
+                if st.button("📋 Copy Token to Clipboard"):
+                    st.toast("Token copied!", icon="✅")
+
+            token_length = len(st.session_state.dozuki_token)
+            st.metric("Token Length", token_length)
+
+            if st.button("🔄 Refresh Token Display"):
+                st.rerun()
+        else:
+            st.warning("⚠️ Not authenticated")
+
+    with dev_tab2:
+        st.subheader("Configuration & Environment")
+
+        config_data = {
+            "Inngest API Base": _inngest_api_base(),
+            "Inngest App ID": "rag_app",
+            "Inngest Production Mode": "False",
+        }
+
+        for key, value in config_data.items():
+            st.text(f"{key}: {value}")
+
+        st.divider()
+
+        st.subheader("Environment Variables")
+        env_vars = {
+            "INNGEST_API_BASE": os.getenv("INNGEST_API_BASE", "Not set (using default)"),
+            "AWS_REGION": os.getenv("AWS_REGION", "Not set"),
+            "AWS_ACCESS_KEY_ID": "***" if os.getenv("AWS_ACCESS_KEY_ID") else "Not set",
+            "AWS_SECRET_ACCESS_KEY": "***" if os.getenv("AWS_SECRET_ACCESS_KEY") else "Not set",
+        }
+
+        for key, value in env_vars.items():
+            st.text(f"{key}: {value}")
+
+    with dev_tab3:
+        st.subheader("Session State")
+
+        st.caption("Current session state variables:")
+
+        session_vars = {
+            "dozuki_token": "***" if st.session_state.dozuki_token else None,
+            "ingested_guides": st.session_state.get("ingested_guides", []),
+            "site_ingestion_active": st.session_state.get("site_ingestion_active", False),
+            "site_ingestion_event_id": st.session_state.get("site_ingestion_event_id"),
+            "site_resume_offset": st.session_state.get("site_resume_offset", 0),
+        }
+
+        if "site_progress" in st.session_state:
+            session_vars["site_progress"] = st.session_state.site_progress
+
+        st.json(session_vars)
+
+        st.divider()
+
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("🔄 Refresh Session State"):
+                st.rerun()
+        with col2:
+            with st.expander("⚠️ Clear Session State"):
+                st.warning(
+                    "This will clear all session state except authentication")
+                if st.button("Clear Non-Auth State", type="primary"):
+                    st.session_state.ingested_guides = []
+                    st.session_state.site_ingestion_active = False
+                    st.session_state.site_ingestion_event_id = None
+                    st.session_state.site_resume_offset = 0
+                    if "site_progress" in st.session_state:
+                        del st.session_state.site_progress
+                    st.success("Session state cleared!")
+                    time.sleep(0.5)
+                    st.rerun()
+
+    with dev_tab4:
+        st.subheader("System Information")
+
+        doc_count = get_document_count()
+        st.metric("Total Documents in Vector DB", doc_count)
+
+        st.divider()
+
+        st.subheader("API Endpoints")
+        api_endpoints = {
+            "Inngest Events": f"{_inngest_api_base()}/events",
+            "Inngest Runs": f"{_inngest_api_base()}/runs",
+            "Inngest Events (specific)": f"{_inngest_api_base()}/events/{{event_id}}",
+            "Inngest Runs (specific)": f"{_inngest_api_base()}/runs/{{run_id}}",
+        }
+
+        for endpoint_name, endpoint_url in api_endpoints.items():
+            st.code(f"{endpoint_name}: {endpoint_url}", language="text")
+
+        st.divider()
+
+        st.subheader("Quick Actions")
+        col1, col2 = st.columns(2)
+
+        with col1:
+            if st.button("🧪 Test Inngest Connection"):
                 try:
-                    event_id = run_async(send_rag_query_event(
-                        question.strip(), int(top_k), st.session_state.dozuki_token))
-
-                    output = wait_for_run_output(event_id)
-                    answer = output.get("answer", "")
-                    source_guides = output.get("source_guides", [])
-
-                    st.subheader("Answer")
-                    st.write(answer or "(No answer)")
-
-                    if source_guides:
-                        st.subheader("📖 Source Guides")
-                        for guide in source_guides:
-                            title = guide.get(
-                                "title", f"Guide {guide.get('guide_id')}")
-                            url = guide.get("url", "")
-                            if url:
-                                st.markdown(f"• [{title}]({url})")
-                            else:
-                                st.write(f"• {title}")
-
+                    url = f"{_inngest_api_base()}/events"
+                    resp = requests.get(url)
+                    if resp.status_code == 200:
+                        st.success(
+                            f"✅ Connection successful! (Status: {resp.status_code})")
+                    else:
+                        st.warning(
+                            f"⚠️ Connection returned status: {resp.status_code}")
                 except Exception as e:
-                    handle_query_error(e)
+                    st.error(f"❌ Connection failed: {str(e)}")
+
+        with col2:
+            if st.button("📊 Check Vector DB Status"):
+                try:
+                    with QdrantStorage() as storage:
+                        count = storage.count()
+                        st.success(
+                            f"✅ Vector DB is accessible with {count} documents")
+                except Exception as e:
+                    st.error(f"❌ Vector DB error: {str(e)}")
 
 
 def handle_ingestion_error(e: Exception):
@@ -546,8 +635,14 @@ with st.container():
         st.caption("RAG Dozuki Guide Manager - Powered by AWS Bedrock & Inngest")
     with col2:
         if st.button("🗑️ Clear All Data"):
-            st.session_state.ingested_guides = []
-            st.session_state.site_resume_offset = 0
-            st.success("Cleared all data and reset progress")
+            with st.spinner("Clearing database..."):
+                try:
+                    with QdrantStorage() as storage:
+                        storage.clear_all()
+                    st.session_state.ingested_guides = []
+                    st.session_state.site_resume_offset = 0
+                    st.success("✅ Database cleared and reset successfully!")
+                except Exception as e:
+                    st.error(f"Failed to clear database: {str(e)}")
             time.sleep(0.5)
             st.rerun()
