@@ -21,7 +21,12 @@ const createSystemMessage = (): ChatMessage => ({
 const SETTINGS_DEFAULT: ChatSettings = {
   topK: DEFAULT_TOP_K,
   token: DEFAULT_TOKEN,
+  scope: "site",
+  guideId: undefined,
 };
+
+const GUIDE_REQUIRED_MESSAGE =
+  "Select a guide before starting a guide-specific chat.";
 
 const loadStoredSettings = (): ChatSettings => {
   if (typeof window === "undefined") {
@@ -33,10 +38,16 @@ const loadStoredSettings = (): ChatSettings => {
     if (!raw) {
       return SETTINGS_DEFAULT;
     }
-    const parsed = JSON.parse(raw) as ChatSettings;
+    const parsed = JSON.parse(raw) as Partial<ChatSettings>;
+    const rawGuideId = parsed?.guideId;
     return {
       topK: parsed.topK ?? SETTINGS_DEFAULT.topK,
       token: parsed.token ?? SETTINGS_DEFAULT.token,
+      scope: parsed.scope === "guide" ? "guide" : SETTINGS_DEFAULT.scope,
+      guideId:
+        typeof rawGuideId === "number" && Number.isFinite(rawGuideId)
+          ? rawGuideId
+          : undefined,
     };
   } catch {
     return SETTINGS_DEFAULT;
@@ -62,6 +73,16 @@ export const useChat = () => {
     window.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
   }, [settings]);
 
+  useEffect(() => {
+    if (error !== GUIDE_REQUIRED_MESSAGE) {
+      return;
+    }
+    if (settings.scope === "guide" && settings.guideId == null) {
+      return;
+    }
+    setError(null);
+  }, [error, settings.guideId, settings.scope]);
+
   const resetConversation = useCallback(() => {
     abortRef.current?.abort();
     abortRef.current = null;
@@ -79,16 +100,26 @@ export const useChat = () => {
   }, []);
 
   const updateSettings = useCallback((next: Partial<ChatSettings>) => {
-    setSettings((prev) => ({
-      ...prev,
-      ...next,
-    }));
+    setSettings((prev) => {
+      const merged = {
+        ...prev,
+        ...next,
+      };
+      if (merged.scope === "site") {
+        merged.guideId = undefined;
+      }
+      return merged;
+    });
   }, []);
 
   const sendMessage = useCallback(
     async (rawContent: string) => {
       const content = rawContent.trim();
       if (!content || isSending) {
+        return;
+      }
+      if (settings.scope === "guide" && settings.guideId == null) {
+        setError(GUIDE_REQUIRED_MESSAGE);
         return;
       }
 
@@ -132,6 +163,10 @@ export const useChat = () => {
           body: JSON.stringify({
             messages: payloadMessages,
             top_k: settings.topK,
+            scope: settings.scope,
+            ...(settings.scope === "guide" && settings.guideId != null
+              ? { guide_id: settings.guideId }
+              : {}),
             ...(settings.token ? { token: settings.token } : {}),
           }),
           signal: controller.signal,
@@ -180,7 +215,7 @@ export const useChat = () => {
         abortRef.current = null;
       }
     },
-    [isSending, settings.topK, settings.token]
+    [isSending, settings.guideId, settings.scope, settings.topK, settings.token]
   );
 
   const messagesWithoutSystem = useMemo(

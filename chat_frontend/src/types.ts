@@ -20,9 +20,13 @@ export interface ChatMessage {
   error?: string;
 }
 
+export type ChatScope = "site" | "guide";
+
 export interface ChatSettings {
   topK: number;
   token?: string;
+  scope: ChatScope;
+  guideId?: number;
 }
 
 export interface ChatResponsePayload {
@@ -30,4 +34,9 @@ export interface ChatResponsePayload {
   sources: string[];
   num_contexts: number;
   source_guides: SourceGuide[];
+}
+
+export interface GuideSummary {
+  guide_id: number;
+  source?: string | null;
 }

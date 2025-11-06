@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import ChatMessageBubble from "./components/ChatMessageBubble";
 import MessageComposer from "./components/MessageComposer";
 import SettingsPanel from "./components/SettingsPanel";
+import ChatScopeSelector from "./components/ChatScopeSelector";
 import { useChat } from "./hooks/useChat";
+import { useGuides } from "./hooks/useGuides";
 
 const App = () => {
   const {
@@ -15,8 +17,36 @@ const App = () => {
     settings,
     updateSettings,
   } = useChat();
+  const {
+    guides,
+    isLoading: isLoadingGuides,
+    error: guidesError,
+    refresh,
+  } = useGuides();
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const isGuideSelectionRequired =
+    settings.scope === "guide" && settings.guideId == null;
+
+  useEffect(() => {
+    if (settings.scope !== "guide") {
+      return;
+    }
+    if (!guides.length) {
+      if (settings.guideId != null) {
+        updateSettings({ guideId: undefined });
+      }
+      return;
+    }
+
+    const currentExists = guides.some(
+      (guide) => guide.guide_id === settings.guideId
+    );
+
+    if (!currentExists) {
+      updateSettings({ guideId: guides[0].guide_id });
+    }
+  }, [guides, settings.guideId, settings.scope, updateSettings]);
 
   useEffect(() => {
     const container = scrollRef.current;
@@ -37,6 +67,16 @@ const App = () => {
               grounded references so you can verify every answer.
             </p>
           </div>
+          <ChatScopeSelector
+            scope={settings.scope}
+            guideId={settings.guideId}
+            guides={guides}
+            isLoading={isLoadingGuides}
+            error={guidesError}
+            onScopeChange={(scope) => updateSettings({ scope })}
+            onGuideChange={(guideId) => updateSettings({ guideId })}
+            onReload={refresh}
+          />
           <div className="app__actions">
             <button
               type="button"
@@ -61,6 +101,12 @@ const App = () => {
             <strong>Heads up:</strong> {error}
           </div>
         ) : null}
+        {isGuideSelectionRequired ? (
+          <div className="app__alert app__alert--info" role="status">
+            <strong>Pick a guide:</strong> Select an ingested guide from the
+            scope switcher to start chatting.
+          </div>
+        ) : null}
         <main className="app__main" ref={scrollRef}>
           {messages.map((message) => (
             <ChatMessageBubble key={message.id} message={message} />
@@ -70,7 +116,7 @@ const App = () => {
           <MessageComposer
             onSend={sendMessage}
             onCancel={cancelRequest}
-            disabled={isSending}
+            disabled={isSending || isGuideSelectionRequired}
             isSending={isSending}
           />
           <span className="app__footnote">

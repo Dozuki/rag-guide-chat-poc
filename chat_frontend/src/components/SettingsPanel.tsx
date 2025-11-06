@@ -4,7 +4,7 @@ import type { ChatSettings } from "../types";
 interface SettingsPanelProps {
   settings: ChatSettings;
   onClose: () => void;
-  onSubmit: (settings: ChatSettings) => void;
+  onSubmit: (settings: Partial<ChatSettings>) => void;
 }
 
 const clampTopK = (value: number) => {

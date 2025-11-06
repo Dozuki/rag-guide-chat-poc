@@ -41,12 +41,23 @@ class ChatRequest(BaseModel):
     messages: list[ChatMessage] = Field(..., min_length=1)
     top_k: int = Field(default=5, ge=1, le=20)
     token: Optional[str] = None
+    scope: Literal["site", "guide"] = "site"
+    guide_id: Optional[int] = None
 
 
-def _retrieve_context(question: str, top_k: int) -> RAGSearchResult:
+class GuideListItem(BaseModel):
+    guide_id: int
+    source: Optional[str] = None
+
+
+def _retrieve_context(
+    question: str,
+    top_k: int,
+    guide_id: Optional[int] = None
+) -> RAGSearchResult:
     query_vec = embed_texts([question])[0]
     with QdrantStorage() as store:
-        found = store.search(query_vec, top_k)
+        found = store.search(query_vec, top_k, guide_id=guide_id)
     return RAGSearchResult(
         contexts=found["contexts"],
         sources=found["sources"],
@@ -412,6 +423,13 @@ app.add_middleware(
 )
 
 
+@app.get("/api/guides", response_model=list[GuideListItem])
+def list_guides() -> list[GuideListItem]:
+    with QdrantStorage() as store:
+        guides = store.list_guides()
+    return [GuideListItem(**guide) for guide in guides]
+
+
 @app.post("/api/chat", response_model=RAQQueryResult)
 def chat_endpoint(request: ChatRequest) -> RAQQueryResult:
     latest_user_message = next(
@@ -436,8 +454,17 @@ def chat_endpoint(request: ChatRequest) -> RAQQueryResult:
         if msg.role in ("user", "assistant") and msg.content.strip()
     ]
 
+    guide_id = None
+    if request.scope == "guide":
+        if request.guide_id is None:
+            raise HTTPException(
+                status_code=400,
+                detail="guide_id is required when scope is 'guide'.",
+            )
+        guide_id = request.guide_id
+
     try:
-        search_result = _retrieve_context(question, request.top_k)
+        search_result = _retrieve_context(question, request.top_k, guide_id)
     except Exception as exc:
         logger.exception("Vector search failed: %s", exc)
         raise HTTPException(
