@@ -122,6 +122,13 @@ class QdrantStorage:
         collection_info = self.client.get_collection(self.collection)
         return collection_info.points_count
 
+    def clear_all(self):
+        self.client.recreate_collection(
+            collection_name=self.collection,
+            vectors_config=VectorParams(
+                size=1024, distance=Distance.COSINE),
+        )
+
     def close(self):
         self.client.close()
 
