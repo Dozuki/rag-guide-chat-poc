@@ -88,20 +88,6 @@ AWS_SECRET_ACCESS_KEY=your_secret_access_key
 AWS_DEFAULT_REGION=us-east-1
 ```
 
-**Option 2: Using AWS CLI**
-
-```bash
-aws configure
-```
-
-**Option 3: Using environment variables**
-
-```bash
-export AWS_ACCESS_KEY_ID=your_access_key_id
-export AWS_SECRET_ACCESS_KEY=your_secret_access_key
-export AWS_DEFAULT_REGION=us-east-1
-```
-
 Make sure you have access to AWS Bedrock and have enabled the following models in your AWS account:
 - `amazon.titan-embed-text-v2:0` (Titan Embed v2)
 - `anthropic.claude-sonnet-4-5-20250929-v1:0` (Claude 4.5 Sonnet)
@@ -127,7 +113,7 @@ docker run -d \
 ### 2. Start the FastAPI Backend
 
 ```bash
-uv run uvicorn main:app --reload
+uv run uvicorn main:app
 ```
 
 The API will be available at `http://127.0.0.1:8000`
