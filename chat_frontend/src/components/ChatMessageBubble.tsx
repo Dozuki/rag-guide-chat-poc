@@ -54,7 +54,7 @@ const ChatMessageBubble = ({ message }: ChatMessageBubbleProps) => {
         </div>
         {isAssistant && message.status === "ready" ? (
           <SourceList
-            // sources={message.sources}
+            sources={message.sources}
             guides={message.sourceGuides}
             numContexts={message.numContexts}
           />

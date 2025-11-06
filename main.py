@@ -34,6 +34,71 @@ inngest_client = inngest.Inngest(
 logger = logging.getLogger("rag_app")
 _GUID_PATH_RE = re.compile(r"/igi/[^/]+/([^./?]+)\.")
 
+MAX_TOP_K = int(os.getenv("CHAT_MAX_TOP_K", "12"))
+LLM_DECIDES_TOP_K = os.getenv("CHAT_LLM_DECIDES_TOP_K", "true").strip().lower() in ("1", "true", "yes", "y")
+
+def _decide_top_k_llm(question: str) -> int:
+    """Ask the LLM to choose an appropriate top_k (1..MAX_TOP_K) for retrieval."""
+    try:
+        # Defensive clamp on empty/very short questions
+        if not (question or "").strip():
+            return min(5, MAX_TOP_K)
+        body = json.dumps(
+            {
+                "anthropic_version": "bedrock-2023-05-31",
+                "max_tokens": 10,
+                "temperature": 0.0,
+                "system": (
+                    "Return ONLY an integer between 1 and {max_k} indicating how many context chunks "
+                    "you need to answer the user's question. No words, no punctuation."
+                ).format(max_k=MAX_TOP_K),
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": f"Question:\n{question}\n\nNumber of chunks needed:",
+                    }
+                ],
+            }
+        )
+        response = bedrock_runtime.invoke_model(
+            modelId="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+            body=body,
+            contentType="application/json",
+            accept="application/json",
+        )
+        response_body = json.loads(response["body"].read())
+        text = response_body["content"][0]["text"].strip()
+        # Extract first integer from response
+        digits = "".join(ch for ch in text if ch.isdigit())
+        if not digits:
+            return min(5, MAX_TOP_K)
+        value = int(digits)
+        if value < 1:
+            return 1
+        if value > MAX_TOP_K:
+            return MAX_TOP_K
+        return value
+    except Exception as exc:
+        logger.warning("LLM top_k decision failed; using fallback: %s", exc)
+        return min(5, MAX_TOP_K)
+
+def _choose_top_k(question: str, provided_top_k: Optional[int]) -> int:
+    """
+    Consolidated logic to pick top_k:
+    - If LLM_DECIDES_TOP_K: ask the LLM for a number and clamp to [1, MAX_TOP_K].
+    - Else: use provided_top_k or 5, then clamp to [1, MAX_TOP_K].
+    """
+    if LLM_DECIDES_TOP_K:
+        value = _decide_top_k_llm(question)
+    else:
+        value = int(provided_top_k or 5)
+    if value < 1:
+        value = 1
+    if value > MAX_TOP_K:
+        value = MAX_TOP_K
+    logger.debug("top_k chosen = %s (LLM=%s)", value, LLM_DECIDES_TOP_K)
+    return value
+
 
 def _dedupe_images_by_guid(urls: list[str], max_items: int = 12) -> list[str]:
     """Dedupe images by GUID (e.g., /igi/<site>/<GUID>.<size>), ignoring size and query.
@@ -437,7 +502,8 @@ def process_single_guide(guide_id: int, token: str, site_id: str) -> dict:
 )
 async def rag_query_guide_ai(ctx: inngest.Context):
     question = ctx.event.data["question"]
-    top_k = int(ctx.event.data.get("top_k", 5))
+    provided_top_k = ctx.event.data.get("top_k")
+    top_k = _choose_top_k(question, provided_top_k)
     token = ctx.event.data.get("token")
 
     found = await ctx.step.run(
@@ -556,7 +622,8 @@ def chat_endpoint(request: ChatRequest, response: Response) -> RAQQueryResult:
         guide_id = request.guide_id
 
     try:
-        search_result = _retrieve_context(question, request.top_k, guide_id)
+        effective_top_k = _choose_top_k(question, request.top_k)
+        search_result = _retrieve_context(question, effective_top_k, guide_id)
     except Exception as exc:
         logger.exception("Vector search failed: %s", exc)
         raise HTTPException(
